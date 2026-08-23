@@ -13,6 +13,13 @@ from docling_core.types.doc.items.picture.picture import (
     PictureItem,
 )
 
+from ml.ingestion.normalization.text_normalizer import (
+    normalize_text,
+    normalize_table_headers,
+    normalize_table_rows,
+    normalize_picture_text,
+)
+
 from ml.ingestion.schemas.canonical import (
     CanonicalDocument,
     HeadingElement,
@@ -52,11 +59,12 @@ def _convert_text_item(
     item: TextItem,
 ) -> TextElement:
     """
-    Convert a Docling TextItem into a canonical TextElement.
+    Convert a Docling TextItem into
+    a canonical TextElement.
     """
 
     return TextElement(
-        text=item.text,
+        text=normalize_text(item.text),
         provenance=_convert_provenance(item.prov),
     )
 
@@ -70,7 +78,7 @@ def _convert_heading_item(
     """
 
     return HeadingElement(
-        text=item.text,
+        text=normalize_text(item.text),
         level=item.level,
         provenance=_convert_provenance(item.prov),
     )
@@ -81,10 +89,16 @@ def _convert_table_item(
     document: DoclingDocument,
 ) -> TableElement:
     """
-    Convert a Docling TableItem into a canonical TableElement.
+    Convert a Docling TableItem into
+    a canonical TableElement.
+
+    Table structure is preserved while
+    individual cell content is normalized.
     """
 
-    dataframe = item.export_to_dataframe(doc=document)
+    dataframe = item.export_to_dataframe(
+        doc=document
+    )
 
     headers = [
         str(column)
@@ -99,6 +113,11 @@ def _convert_table_item(
         for row in dataframe.fillna("").values.tolist()
     ]
 
+    # Normalize table content while preserving
+    # row order, column order, and structure.
+    headers = normalize_table_headers(headers)
+    rows = normalize_table_rows(rows)
+
     return TableElement(
         headers=headers,
         rows=rows,
@@ -108,31 +127,42 @@ def _convert_table_item(
 
 def _convert_picture_item(
     item: PictureItem,
-    item_lookup: dict[str, object],
+    document: DoclingDocument,
 ) -> PictureElement:
     """
-    Convert a Docling PictureItem into a canonical
-    PictureElement.
+    Convert a Docling PictureItem into
+    a canonical PictureElement.
 
-    Picture child references are resolved using
-    a lookup created from Docling's iterate_items().
+    Text items whose parent is this picture
+    are treated as text extracted from the visual.
     """
 
     extracted_text_parts = []
 
-    for child in item.children:
-        child_item = item_lookup.get(child.cref)
+    for text_item in document.texts:
 
-        if isinstance(child_item, TextItem):
-            text = child_item.text.strip()
+        if not isinstance(text_item, TextItem):
+            continue
 
-            if text:
-                extracted_text_parts.append(text)
+        if text_item.parent is None:
+            continue
+
+        if text_item.parent.cref != item.self_ref:
+            continue
+
+        text = normalize_picture_text(
+            text_item.text
+        )
+
+        if text:
+            extracted_text_parts.append(text)
 
     extracted_text = None
 
     if extracted_text_parts:
-        extracted_text = " ".join(extracted_text_parts)
+        extracted_text = " ".join(
+            extracted_text_parts
+        )
 
     return PictureElement(
         image_reference=item.self_ref,
@@ -144,7 +174,6 @@ def _convert_picture_item(
 def _convert_body_item(
     item,
     document: DoclingDocument,
-    item_lookup: dict[str, object],
 ):
     """
     Convert one Docling document item into
@@ -166,7 +195,7 @@ def _convert_body_item(
     if isinstance(item, PictureItem):
         return _convert_picture_item(
             item=item,
-            item_lookup=item_lookup,
+            document=document,
         )
 
     return None
@@ -186,20 +215,17 @@ def convert_docling_document(
     into our stable internal representation.
     """
 
-    items = list(document.iterate_items())
-
-    item_lookup = {
-        item.self_ref: item
-        for item, _level in items
-    }
+    items = list(
+        document.iterate_items()
+    )
 
     elements = []
 
     for item, _level in items:
+
         element = _convert_body_item(
             item=item,
             document=document,
-            item_lookup=item_lookup,
         )
 
         if element is not None:
