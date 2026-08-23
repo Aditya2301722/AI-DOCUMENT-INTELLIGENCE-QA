@@ -1,12 +1,62 @@
-﻿# Python
+﻿# =========================
+# Python
+# =========================
 __pycache__/
 *.py[cod]
-.env
+*.pyo
+*.pyd
 
-# Node
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python tooling
+# =========================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Node / Frontend
+# =========================
 node_modules/
 dist/
+build/
 
-# Editor
+# =========================
+# IDE / OS
+# =========================
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Local databases / data
+# =========================
+*.sqlite
+*.sqlite3
+
+# =========================
+# Docker
+# =========================
+docker-compose.override.yml
