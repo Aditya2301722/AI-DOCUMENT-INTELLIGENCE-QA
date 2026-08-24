@@ -14,7 +14,7 @@ class PostgresRepository:
     """
     PostgreSQL repository for the RAG pipeline.
 
-    Responsible only for storing and retrieving
+    Responsible for storing and retrieving
     documents, chunks, and embeddings.
     """
 
@@ -34,22 +34,25 @@ class PostgresRepository:
         filename: str,
         mime_type: str,
         page_count: int | None,
+        session_id: int,
     ) -> None:
-        """Insert one document."""
+        """Insert one document belonging to a chat session."""
 
         query = """
             INSERT INTO documents (
                 document_id,
                 filename,
                 mime_type,
-                page_count
+                page_count,
+                session_id
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (document_id)
             DO UPDATE SET
                 filename = EXCLUDED.filename,
                 mime_type = EXCLUDED.mime_type,
-                page_count = EXCLUDED.page_count;
+                page_count = EXCLUDED.page_count,
+                session_id = EXCLUDED.session_id;
         """
 
         with self._connect() as connection:
@@ -61,6 +64,7 @@ class PostgresRepository:
                         filename,
                         mime_type,
                         page_count,
+                        session_id,
                     ),
                 )
 
@@ -158,7 +162,10 @@ class PostgresRepository:
 
             connection.commit()
 
-    def count_chunks(self, document_id: str) -> int:
+    def count_chunks(
+        self,
+        document_id: str,
+    ) -> int:
         """Return the number of chunks belonging to a document."""
 
         query = """
@@ -177,13 +184,14 @@ class PostgresRepository:
     def search_similar_chunks(
         self,
         query_embedding: Sequence[float],
+        session_id: int,
         top_k: int = 20,
     ) -> list[dict]:
         """
-        Search chunks using cosine distance.
+        Search chunks using cosine similarity.
 
-        The documents table is joined so that retrieval results
-        include the original filename for source attribution.
+        Retrieval is restricted to documents belonging
+        to the provided chat session.
         """
 
         query = """
@@ -201,6 +209,7 @@ class PostgresRepository:
             FROM chunks AS c
             INNER JOIN documents AS d
                 ON c.document_id = d.document_id
+            WHERE d.session_id = %s
             ORDER BY c.embedding <=> %s::vector
             LIMIT %s;
         """
@@ -215,6 +224,7 @@ class PostgresRepository:
                     query,
                     (
                         embedding_string,
+                        session_id,
                         embedding_string,
                         top_k,
                     ),
@@ -242,7 +252,12 @@ class PostgresRepository:
         self,
         document_id: str,
     ) -> None:
-        """Delete a document and its chunks."""
+        """
+        Delete a document.
+
+        The associated chunks are deleted automatically
+        if the database foreign key uses ON DELETE CASCADE.
+        """
 
         query = """
             DELETE FROM documents

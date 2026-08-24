@@ -60,3 +60,27 @@ Thumbs.db
 # Docker
 # =========================
 docker-compose.override.yml
+# =========================
+# Uploaded documents
+# =========================
+data/raw/documents/*
+!data/raw/documents/.gitkeep
+
+# =========================
+# Uploaded / generated documents
+# =========================
+data/raw/documents/*
+!data/raw/documents/.gitkeep
+
+# =========================
+# Local debugging scripts
+# =========================
+debug_ingestion.py
+check_documents.py
+check_fk.py
+create_app_tables.py
+setup_test_session.py
+verify_document_session.py
+verify_tables.py
+attach_document_to_session.py
+backend/test_db_async.py

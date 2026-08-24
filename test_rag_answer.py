@@ -1,11 +1,12 @@
 from ml.embedding.ollama_embedding import OllamaEmbeddingService
 from ml.generation.ollama_generator import OllamaGenerator
 from ml.generation.prompt_builder import build_rag_prompt
+from ml.retrieval.answerability import AnswerabilityChecker
 from ml.retrieval.bge_reranker import BGEReranker
 from ml.storage.postgres import PostgresRepository
 
 
-QUESTION = "How long can damaged products be returned?"
+QUESTION = "What is the CEO's annual salary?"
 
 
 def main() -> None:
@@ -14,10 +15,10 @@ def main() -> None:
     print("=" * 80)
 
     # ---------------------------------------------------------
-    # 1. Embed the user question
+    # 1. Create query embedding
     # ---------------------------------------------------------
 
-    print("\n[1/5] Creating query embedding...")
+    print("\n[1/6] Creating query embedding...")
 
     embedding_service = OllamaEmbeddingService()
 
@@ -28,10 +29,10 @@ def main() -> None:
     )
 
     # ---------------------------------------------------------
-    # 2. Retrieve candidates from PostgreSQL + pgvector
+    # 2. Retrieve candidates
     # ---------------------------------------------------------
 
-    print("\n[2/5] Searching pgvector...")
+    print("\n[2/6] Searching pgvector...")
 
     repository = PostgresRepository()
 
@@ -40,13 +41,15 @@ def main() -> None:
         top_k=20,
     )
 
-    print(f"Candidates retrieved: {len(candidates)}")
+    print(
+        f"Candidates retrieved: {len(candidates)}"
+    )
 
     # ---------------------------------------------------------
     # 3. Rerank candidates
     # ---------------------------------------------------------
 
-    print("\n[3/5] Reranking with BGE...")
+    print("\n[3/6] Reranking with BGE...")
 
     reranker = BGEReranker()
 
@@ -56,24 +59,64 @@ def main() -> None:
         top_k=5,
     )
 
-    print(f"Candidates after reranking: {len(reranked)}")
+    print(
+        f"Candidates after reranking: {len(reranked)}"
+    )
 
     # ---------------------------------------------------------
-    # 4. Build grounded prompt
+    # 4. Check answerability
     # ---------------------------------------------------------
 
-    print("\n[4/5] Building grounded prompt...")
+    print("\n[4/6] Checking answerability...")
+
+    answerability_checker = AnswerabilityChecker(
+        minimum_score=0.50,
+    )
+
+    decision = answerability_checker.check(reranked)
+
+    print(
+        f"Top reranker score: {decision.top_score:.4f}"
+    )
+
+    print(
+        f"Answerable: {decision.answerable}"
+    )
+
+    print(
+        f"Reason: {decision.reason}"
+    )
+
+    # ---------------------------------------------------------
+    # 5. Abstain if evidence is insufficient
+    # ---------------------------------------------------------
+
+    if not decision.answerable:
+        print()
+        print("=" * 80)
+        print("FINAL ANSWER")
+        print("=" * 80)
+        print()
+        print(
+            "I don't have enough information in the provided "
+            "documents to answer this question."
+        )
+        print()
+        print("=" * 80)
+        return
+
+    # ---------------------------------------------------------
+    # 6. Build prompt and generate answer
+    # ---------------------------------------------------------
+
+    print("\n[5/6] Building grounded prompt...")
 
     system_prompt, user_prompt = build_rag_prompt(
         question=QUESTION,
         candidates=reranked,
     )
 
-    # ---------------------------------------------------------
-    # 5. Generate answer with Qwen3:8b
-    # ---------------------------------------------------------
-
-    print("\n[5/5] Generating answer with Qwen3:8b...")
+    print("\n[6/6] Generating answer with Qwen3:8b...")
 
     generator = OllamaGenerator(
         model="qwen3:8b",
